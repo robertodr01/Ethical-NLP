@@ -37,12 +37,9 @@ def extract_lemmatized_emfd(spacy_pipeline, emfd_dict) -> dict:
 
     return emfd_lemma
 
-def score_mfd2(doc):
+def score_mfd2(doc, preprocessing_pipeline):
     
     """Scores documents with the MFD2."""
-
-    spacy_model = SpaCyPreProcessor.load_model('en_core_web_sm')
-    preprocessing_pipeline = SpaCyPreProcessor(spacy_model=spacy_model, remove_numbers=True, remove_special=True, remove_stop_words=True, lemmatize=False, use_gpu=True)
     
     mfd2_score = {k:0 for k in mfd2_foundations}
     moral_words = [mfd2[token]['foundation'] for token in preprocessing_pipeline.preprocess_text(doc).split() if token in mfd2.keys()]
