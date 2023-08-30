@@ -56,12 +56,37 @@ class CustomDataset(Dataset):
     def __len__(self):
         return len(self.data)
     
+    # def __getitem__(self, index):
+        
+    #     row = self.data.iloc[index]
+
+    #     text = row.text
+    #     labels = row[LABEL_COLUMNS]
+
+    #     encoding = self.tokenizer.encode_plus(
+    #         text,
+    #         add_special_tokens = True,
+    #         max_length = self.max_token_len,
+    #         return_token_type_ids = False,
+    #         padding = "max_length", 
+    #         truncation = True,
+    #         return_attention_mask = True,
+    #         return_tensors = 'pt'
+    #     )
+
+    #     return dict(
+    #         text=text,
+    #         input_ids=encoding["input_ids"].flatten(),
+    #         attention_mask=encoding["attention_mask"].flatten(),
+    #         labels=torch.FloatTensor(labels)
+    #     )
+    
     def __getitem__(self, index):
         
         row = self.data.iloc[index]
 
         text = row.text
-        labels = row[LABEL_COLUMNS]
+        label = row.encoded_target
 
         encoding = self.tokenizer.encode_plus(
             text,
@@ -74,12 +99,13 @@ class CustomDataset(Dataset):
             return_tensors = 'pt'
         )
 
-        return dict(
-            text=text,
-            input_ids=encoding["input_ids"].flatten(),
-            attention_mask=encoding["attention_mask"].flatten(),
-            labels=torch.FloatTensor(labels)
-        )
+        return {
+            'text': text,
+            'input_ids': encoding['input_ids'].flatten(),
+            'attention_mask': encoding["attention_mask"].flatten(),
+            'label': torch.tensor(label, dtype=torch.int64)
+        }
+    
 
 
 
@@ -171,15 +197,27 @@ class Model(l.LightningModule):
                 'scheduler': lr_scheduler
             }
         }
+    
+    # def forward(self, input_ids, attention_mask, labels=None):
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    #     output = self.bert(input_ids, attention_mask=attention_mask)
+    #     output = self.classifier(output.pooler_output)
+    #     output = torch.sigmoid(output)
+    #     loss = 0
+    #     if labels is not None:
+    #         loss = self.criterion(output, labels)
+            
+    #     return loss, output
+
+    def forward(self, input_ids, attention_mask, label=None):
 
         output = self.bert(input_ids, attention_mask=attention_mask)
         output = self.classifier(output.pooler_output)
-        output = torch.sigmoid(output)
-        loss = 0
-        if labels is not None:
-            loss = self.criterion(output, labels)
+        # output = torch.sigmoid(output)
+        # output = torch.softmax(output, dim=1)
+        loss = None
+        if label is not None:
+            loss = self.criterion(output, label)
             
         return loss, output
 
@@ -188,7 +226,7 @@ class Model(l.LightningModule):
 
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        labels = batch["labels"]
+        labels = batch["label"]
         loss, outputs = self(input_ids, attention_mask, labels)
 
         accuracy = self.weighted_accuracy(outputs, labels)
@@ -202,14 +240,14 @@ class Model(l.LightningModule):
                        "train_prec": precision, "train_rec": recall,
                        "train_f1": f1}, on_step=True, on_epoch=True, prog_bar=True, logger = True)
 
-        return {"loss": loss, "predictions": outputs, "labels": labels}
+        return {"loss": loss, "predictions": outputs, "label": labels}
 
     
     def validation_step(self, batch, batch_idx):
 
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        labels = batch["labels"]
+        labels = batch["label"]
         loss, outputs = self(input_ids, attention_mask, labels)
         # self.log("val_loss", loss, prog_bar=True, logger=True)
 
@@ -224,13 +262,13 @@ class Model(l.LightningModule):
                        "val_prec": precision, "val_rec": recall,
                        "val_f1": f1}, on_step=False, on_epoch=True, prog_bar=True, logger = True)
         
-        return {"loss": loss, "predictions": outputs, "labels": labels}
+        return {"loss": loss, "predictions": outputs, "label": labels}
 
     def test_step(self, batch, batch_idx):
 
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        labels = batch["labels"]
+        labels = batch["label"]
         loss, outputs = self(input_ids, attention_mask, labels)
         # self.log("test_loss", loss, prog_bar=True, logger=True)
 
@@ -245,5 +283,5 @@ class Model(l.LightningModule):
                        "test_prec": precision, "test_rec": recall,
                        "test_f1": f1}, on_step=False, on_epoch=True, prog_bar=True, logger = True)
         
-        return {"loss": loss, "predictions": outputs, "labels": labels}
+        return {"loss": loss, "predictions": outputs, "label": labels}
     
