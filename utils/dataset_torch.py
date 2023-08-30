@@ -1,3 +1,4 @@
+from tkinter import TRUE
 from typing import Tuple
 import pandas as pd
 import lightning as l
@@ -5,10 +6,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split, default_collate
-from transformers import AutoTokenizer, BertTokenizer, BertModel, AdamW, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, BertTokenizer, BertModel, AdamW, get_linear_schedule_with_warmup, AutoModel
 from sklearn.model_selection import train_test_split
 import pytorch_lightning as pl
-from torchmetrics.classification import Accuracy, Precision, Recall, F1Score
+from torchmetrics.classification import MulticlassAccuracy, MulticlassPrecision, MulticlassRecall, MulticlassF1Score
 from lightning.pytorch.cli import LightningCLI
 
 LABEL_COLUMNS = ['Morally Negative',
@@ -86,7 +87,7 @@ class CustomDataModule(l.LightningDataModule):
 
     def __init__(self,
                  data: pd.DataFrame,
-                 tokenizer: BertTokenizer,
+                 tokenizer: AutoTokenizer,
                  max_token_len = 128,
                  train_split_percentage: float = 70,
                  val_split_percentage: float = 10,
@@ -122,6 +123,10 @@ class CustomDataModule(l.LightningDataModule):
         
         self.train_set, self.val_set, self.test_set = random_split(dataset, [train_split, val_split, test_split])
 
+        # print(self.train_set, len(self.train_set))
+        # print(self.val_set, len(self.val_set))
+        # print(self.test_set, len(self.test_set))
+
     def train_dataloader(self):
         return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers,
                           drop_last=True, shuffle=self.shuffle)
@@ -134,39 +139,22 @@ class CustomDataModule(l.LightningDataModule):
         return DataLoader(self.test_set, batch_size=self.batch_size, num_workers=self.num_workers,
                           drop_last=True)
 
-    # def collate_fn(self, examples):
-
-    #     text, labels = default_collate(examples)
-
-    #     encoding = self.tokenizer.encode_plus(
-    #         text,
-    #         add_special_tokens = True,
-    #         max_length = self.max_token_length,
-    #         return_token_type_ids = False,
-    #         padding = "max_length", 
-    #         truncation = True,
-    #         return_attention_mask = True,
-    #         return_tensors = 'pt'
-    #     )
-
-    #     return dict(
-    #         text,
-    #         input_ids = encoding['input_ids'].flatten(),
-    #         attention_mask = encoding['attention_mask'].flatten(),
-    #         labels = torch.FloatTensor(labels)
-    #     )
 
 class Model(l.LightningModule):
 
     def __init__(self, bert_model_name: str, lr: float, weigth_decay: float, n_warmup_steps = None):
 
         super().__init__()
-        self.bert = BertModel.from_pretrained(bert_model_name, return_dict=True)
+        self.bert = AutoModel.from_pretrained(bert_model_name, return_dict=True)
         self.classifier = nn.Linear(self.bert.config.hidden_size, len(LABEL_COLUMNS))
         self.n_warmup_steps = n_warmup_steps
         self.lr = lr
         self.weigth_decay = weigth_decay
-        self.criterion = nn.BCELoss()
+        self.criterion = nn.CrossEntropyLoss()
+        self.weighted_accuracy = MulticlassAccuracy(num_classes=len(LABEL_COLUMNS), average='weighted')
+        self.weighted_precision = MulticlassPrecision(num_classes=len(LABEL_COLUMNS), average='weighted')
+        self.weighted_recall = MulticlassRecall(num_classes=len(LABEL_COLUMNS), average='weighted')
+        self.weighted_f1 = MulticlassF1Score(num_classes=len(LABEL_COLUMNS), average='weighted')
         self.save_hyperparameters()
 
     def configure_optimizers(self):
@@ -195,13 +183,24 @@ class Model(l.LightningModule):
             
         return loss, output
 
+
     def training_step(self, batch, batch_idx):
 
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
         labels = batch["labels"]
         loss, outputs = self(input_ids, attention_mask, labels)
-        self.log("train_loss", loss, prog_bar=True, logger=True)
+
+        accuracy = self.weighted_accuracy(outputs, labels)
+        precision = self.weighted_precision(outputs, labels)
+        recall = self.weighted_recall(outputs, labels)
+        f1 = self.weighted_f1(outputs, labels)
+
+        # self.log("train_loss", loss, prog_bar=True, logger=True)
+
+        self.log_dict({"train_loss": loss, "train_acc": accuracy, 
+                       "train_prec": precision, "train_rec": recall,
+                       "train_f1": f1}, on_step=True, on_epoch=True, prog_bar=True, logger = True)
 
         return {"loss": loss, "predictions": outputs, "labels": labels}
 
@@ -212,7 +211,18 @@ class Model(l.LightningModule):
         attention_mask = batch["attention_mask"]
         labels = batch["labels"]
         loss, outputs = self(input_ids, attention_mask, labels)
-        self.log("val_loss", loss, prog_bar=True, logger=True)
+        # self.log("val_loss", loss, prog_bar=True, logger=True)
+
+        accuracy = self.weighted_accuracy(outputs, labels)
+        precision = self.weighted_precision(outputs, labels)
+        recall = self.weighted_recall(outputs, labels)
+        f1 = self.weighted_f1(outputs, labels)
+
+        # self.log("train_loss", loss, prog_bar=True, logger=True)
+
+        self.log_dict({"val_loss": loss, "val_acc": accuracy, 
+                       "val_prec": precision, "val_rec": recall,
+                       "val_f1": f1}, on_step=False, on_epoch=True, prog_bar=True, logger = True)
         
         return {"loss": loss, "predictions": outputs, "labels": labels}
 
@@ -222,11 +232,18 @@ class Model(l.LightningModule):
         attention_mask = batch["attention_mask"]
         labels = batch["labels"]
         loss, outputs = self(input_ids, attention_mask, labels)
-        self.log("test_loss", loss, prog_bar=True, logger=True)
+        # self.log("test_loss", loss, prog_bar=True, logger=True)
+
+        accuracy = self.weighted_accuracy(outputs, labels)
+        precision = self.weighted_precision(outputs, labels)
+        recall = self.weighted_recall(outputs, labels)
+        f1 = self.weighted_f1(outputs, labels)
+
+        # self.log("train_loss", loss, prog_bar=True, logger=True)
+
+        self.log_dict({"test_loss": loss, "test_acc": accuracy, 
+                       "test_prec": precision, "test_rec": recall,
+                       "test_f1": f1}, on_step=False, on_epoch=True, prog_bar=True, logger = True)
         
         return {"loss": loss, "predictions": outputs, "labels": labels}
     
-
-def cli_main():
-    LightningCLI(model_class=Model, datamodule_class=CustomDataModule,
-                 save_config_kwargs={"overwrite": True})
