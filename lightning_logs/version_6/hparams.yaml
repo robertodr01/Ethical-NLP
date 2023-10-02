@@ -1,4 +1,0 @@
-bert_model_name: bert-base-cased
-lr: 2.0e-05
-n_warmup_steps: null
-weigth_decay: 0.001
