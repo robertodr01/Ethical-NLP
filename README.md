@@ -1,1 +1,6 @@
-# Fair-NLP
+# Ethical-NLP: an Application of Sentiment Analysis & Ethical Scoring for Morals Text Classification
+
+In the development of artificial intelligence (AI), the importance of an engineering process cannot be underestimated. In addition to functional aspects, this process includes equally crucial non-functional requirements such as scalability, reliability and security. However, the requirement for fairness, i.e., implementing engineering processes such that the model makes ethical choices, has gained importance in recent years. Recent studies have shown that most of the ethical problems reside in the data, as they are subject to various biases, and convey these in model decisions. Our study focused on identifying and extracting morality from small texts, such as comments on social networks. For this purpose, the eMFDScore library, based on Moral Foundation Theory, and Sentiment Analysis were used, as eMFDScore scores do not provide a detailed description of the morality of the latter. A taxonomy was created by combining the eMFDScore and Sentiment Analysis scores, identifying 8 classes, and shallow machine learning and deep learning models were tested to predict these classes. The results, given the data used and the methodology applied, were good for shallow models and poor for deep learning models. This repository contains all references to the work done.
+
+## How to run all files?
+In each notebook, you will find a cell with commands to install dependencies. I suggest you to use Conda environment with Python 3.10.12 version. 
